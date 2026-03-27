@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/pypi/v/glycosignal?color=blue" alt="PyPI version"/></a>
+  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/badge/pypi-v0.1.3-blue" alt="PyPI version"/></a>
   <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue" alt="Python versions"/></a>
   <a href="https://github.com/StuartSong/GlycoSignal/actions/workflows/tests.yml"><img src="https://github.com/StuartSong/GlycoSignal/actions/workflows/tests.yml/badge.svg" alt="Tests"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
@@ -300,41 +300,6 @@ glycosignal.list_features(category="risk")          # ['adrr', 'gri', 'hbgi', 'l
 glycosignal.get_feature_metadata()                  # DataFrame: name | description | category
 glycosignal.get_feature("gri").description          # 'Glucose Risk Index (Klonoff et al. 2023)'
 ```
-
-| Feature name | Category | Description |
-|---|---|---|
-| `mean_glucose` | basic_stats | Mean glucose (mg/dL) |
-| `median_glucose` | basic_stats | Median glucose (mg/dL) |
-| `min_glucose` | basic_stats | Minimum glucose (mg/dL) |
-| `max_glucose` | basic_stats | Maximum glucose (mg/dL) |
-| `q1_glucose` | basic_stats | 25th percentile glucose (mg/dL) |
-| `q3_glucose` | basic_stats | 75th percentile glucose (mg/dL) |
-| `sd` | variability | Standard deviation (mg/dL) |
-| `cv` | variability | Coefficient of variation (%) |
-| `j_index` | variability | J-index: 0.001 × (mean + SD)² |
-| `mage` | variability | Mean Amplitude of Glucose Excursions (mg/dL) |
-| `conga24` | variability | SD of glucose differences 24h apart (mg/dL) |
-| `tir_70_180_min` | time_in_range | Minutes in target range 70–180 mg/dL |
-| `tir_70_180_pct` | time_in_range | Percent time in target range 70–180 mg/dL |
-| `tir_70_140_min` | time_in_range | Minutes in tight range 70–140 mg/dL |
-| `tir_70_140_pct` | time_in_range | Percent time in tight range 70–140 mg/dL |
-| `tbr_70_min` | time_in_range | Minutes below 70 mg/dL (level 1 hypoglycemia) |
-| `tbr_70_pct` | time_in_range | Percent time below 70 mg/dL |
-| `tbr_54_min` | time_in_range | Minutes below 54 mg/dL (level 2 hypoglycemia) |
-| `tbr_54_pct` | time_in_range | Percent time below 54 mg/dL |
-| `tar_180_min` | time_in_range | Minutes above 180 mg/dL (level 1 hyperglycemia) |
-| `tar_180_pct` | time_in_range | Percent time above 180 mg/dL |
-| `tar_250_min` | time_in_range | Minutes above 250 mg/dL (level 2 hyperglycemia) |
-| `tar_250_pct` | time_in_range | Percent time above 250 mg/dL |
-| `lbgi` | risk | Low Blood Glucose Index |
-| `hbgi` | risk | High Blood Glucose Index |
-| `adrr` | risk | Average Daily Risk Range |
-| `gri` | risk | Glucose Risk Index (Klonoff et al. 2023) |
-| `mean_glucose_excursion` | excursion | Mean of readings outside mean ± 1SD (mg/dL) |
-| `mean_glucose_normal` | excursion | Mean of readings inside mean ± 1SD (mg/dL) |
-| `peaks_above_140` | peak | Episodes above 140 mg/dL (count) |
-| `peaks_above_180` | peak | Episodes above 180 mg/dL (count) |
-| `peaks_above_250` | peak | Episodes above 250 mg/dL (count) |
 
 Add a custom feature:
 
