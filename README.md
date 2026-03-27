@@ -11,7 +11,7 @@
 
 # GlycoSignal
 
-Analyze continuous glucose monitor (CGM) data in Python with individually callable glycemic metrics, sliding-window pipelines, and ML-ready feature matrices.
+Analyze Continuous Glucose Monitor (CGM) data in Python with individually callable glycemic metrics, sliding-window pipelines, and ML-ready feature matrices.
 
 ---
 
