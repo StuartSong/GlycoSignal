@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="GlycoSignal" width="320"/>
+</p>
+
 # GlycoSignal
 
 CGM analysis for Python. Compute any glycemic metric individually, or generate ML-ready feature matrices from sliding windows.
