@@ -1,0 +1,4 @@
+include LICENSE
+include README.md
+recursive-include assets *.png
+recursive-include examples *.csv

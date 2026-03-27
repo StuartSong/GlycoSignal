@@ -69,6 +69,7 @@ dmypy.json
 Data/
 *.csv
 !tests/**/*.csv
+!examples/**/*.csv
 
 # Reports output
 *.html

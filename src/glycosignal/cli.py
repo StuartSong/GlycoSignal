@@ -36,7 +36,7 @@ def _print_table(d: dict, title: str = "") -> None:
     """Print a dict as a formatted two-column table."""
     if title:
         print(f"\n{title}")
-        print("─" * 50)
+        print("-" * 50)
     for key, val in d.items():
         if isinstance(val, float):
             print(f"  {key:<35} {val:>10.3f}")
@@ -198,7 +198,7 @@ def cmd_list_features(args: argparse.Namespace) -> None:
     # Group by category
     for cat, grp in meta.groupby("category"):
         print(f"\n{cat.upper()}")
-        print("─" * 60)
+        print("-" * 60)
         for _, row in grp.iterrows():
             print(f"  {row['name']:<35}  {row['description']}")
 
