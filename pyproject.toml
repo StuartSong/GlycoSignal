@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "GlycoSignal"
 version = "0.1.1"
-description = "A production-quality Python package for continuous glucose monitor (CGM) data analysis and ML-ready feature extraction."
+description = "Python toolkit for CGM analysis with individually callable glycemic metrics and ML-ready feature extraction."
 readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
