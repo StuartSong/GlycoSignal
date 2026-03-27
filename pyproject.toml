@@ -6,12 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "GlycoSignal"
 version = "0.1.0"
 description = "A production-quality Python package for continuous glucose monitor (CGM) data analysis and ML-ready feature extraction."
-readme = "README.md"
-license = "MIT"
-license-files = ["LICENSE"]
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [
-    { name = "GlycoSignal Contributors" },
+    { name = "Jiafeng Song" },
 ]
 keywords = ["cgm", "glucose", "diabetes", "glycemic", "feature-extraction", "machine-learning"]
 classifiers = [
@@ -49,18 +48,26 @@ docs = [
     "mkdocstrings[python]>=0.24",
 ]
 all = [
-    "GlycoSignal[dev,report,docs]",
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.5",
+    "jinja2>=3.1",
+    "mkdocs-material>=9.0",
+    "mkdocstrings[python]>=0.24",
 ]
 
 [project.scripts]
 glycosignal = "glycosignal.cli:main"
 
 [project.urls]
-Repository = "https://github.com/glycosignal/glycosignal"
-Issues = "https://github.com/glycosignal/glycosignal/issues"
+Repository = "https://github.com/StuartSong/GlycoSignal"
+Issues = "https://github.com/StuartSong/GlycoSignal/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["glycosignal*"]
 
 [tool.setuptools.package-dir]
 "" = "src"

@@ -529,4 +529,4 @@ pytest
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. Copyright (c) 2024 Jiafeng Song. See [LICENSE](LICENSE).
