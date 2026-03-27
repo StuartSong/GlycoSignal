@@ -127,7 +127,7 @@ class TestLoadCgmFile:
         _write_csv(df, path)
         result = io.load_cgm_file(path, subject_col="id")
         assert "subject" in result.columns
-        assert result["subject"].dtype == object
+        assert pd.api.types.is_string_dtype(result["subject"])
 
     def test_no_subject_col_raises(self, tmp_path):
         df = pd.DataFrame({
