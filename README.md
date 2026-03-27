@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/logo.png" alt="GlycoSignal" width="320"/>
+  <img src="https://raw.githubusercontent.com/StuartSong/GlycoSignal/main/assets/logo.png" alt="GlycoSignal" width="320"/>
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/pypi/v/GlycoSignal?color=blue" alt="PyPI version"/></a>
-  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/pypi/pyversions/GlycoSignal" alt="Python versions"/></a>
-  <a href="https://github.com/glycosignal/glycosignal/actions/workflows/tests.yml"><img src="https://github.com/glycosignal/glycosignal/actions/workflows/tests.yml/badge.svg" alt="Tests"/></a>
+  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/pypi/v/glycosignal?color=blue" alt="PyPI version"/></a>
+  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/pypi/pyversions/glycosignal" alt="Python versions"/></a>
+  <a href="https://github.com/StuartSong/GlycoSignal/actions/workflows/tests.yml"><img src="https://github.com/StuartSong/GlycoSignal/actions/workflows/tests.yml/badge.svg" alt="Tests"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
 </p>
 
@@ -519,7 +519,7 @@ df = preprocessing.clean_cgm(df)
 ## Development
 
 ```bash
-git clone https://github.com/glycosignal/glycosignal
+git clone https://github.com/StuartSong/GlycoSignal
 cd glycosignal
 pip install -e ".[dev]"
 pytest
