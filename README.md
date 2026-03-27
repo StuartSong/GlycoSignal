@@ -15,6 +15,110 @@ CGM analysis for Python. Compute any glycemic metric individually, or generate M
 
 ---
 
+## Installation
+
+```bash
+pip install GlycoSignal
+```
+
+Optional extras:
+
+```bash
+pip install "GlycoSignal[dev]"     # pytest, black, ruff, mypy
+pip install "GlycoSignal[report]"  # HTML reports (adds Jinja2)
+```
+
+---
+
+## Input Data Format
+
+GlycoSignal reads **CSV files**. Your CSV needs at minimum a timestamp column and a glucose column.
+
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| `Timestamp` | datetime | Yes | Reading timestamp (any format `pandas` can parse) |
+| `Glucose` | float | Yes | Glucose value in mg/dL |
+| `subject` | string | For multi-subject files | Subject or patient identifier |
+
+**Column names are auto-detected.** You do not need to rename your columns before loading. GlycoSignal recognizes these common names (case-insensitive):
+
+- Timestamp: `Timestamp`, `time`, `datetime`, `date_time`, `date`
+- Glucose: `Glucose`, `Glucose Value (mg/dL)`, `gl`, `sgv`, `glucose_mg_dl`, `bg`, `blood_glucose`
+- Subject: `subject`, `id`, `ptid`, `patient_id`, `subjectid`
+
+If your column names are not recognized, pass them explicitly:
+
+```python
+df = glycosignal.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
+```
+
+**Example CSV (single subject):**
+
+```
+Timestamp,Glucose
+2024-01-15 08:00:00,123
+2024-01-15 08:05:00,121
+2024-01-15 08:10:00,125
+```
+
+**Example CSV (multiple subjects in one file):**
+
+```
+Timestamp,Glucose,subject
+2024-01-15 08:00:00,123,P001
+2024-01-15 08:00:00,135,P002
+2024-01-15 08:05:00,121,P001
+2024-01-15 08:05:00,140,P002
+```
+
+### Working with multiple subjects
+
+If your data has multiple subjects in **one file**, use `load_cgm_file` and specify which column identifies each subject:
+
+```python
+from glycosignal import io
+
+df = io.load_cgm_file("all_subjects.csv", subject_col="ptid")
+```
+
+If each subject is in a **separate CSV file** inside a folder, use `load_cgm_folder`. It auto-derives a `subject` column from each filename:
+
+```python
+df = io.load_cgm_folder("data/subjects/")
+# Adds 'subject' and 'filename' columns automatically
+```
+
+When building sliding windows or feature maps from multi-subject data, use `group_col` to process each subject independently:
+
+```python
+from glycosignal import windows, features
+
+result = windows.create_sliding_windows(df, window_hours=24, group_col="subject")
+X = features.build_feature_map(result.windows)
+# X contains rows for all subjects, with a 'subject' column preserved
+```
+
+### Unit conversion
+
+GlycoSignal expects glucose in **mg/dL**. If your data is in mmol/L, convert first:
+
+```python
+from glycosignal import preprocessing
+
+df = preprocessing.convert_units(df, from_unit="mmol/L", to_unit="mg/dL")
+```
+
+### Device-specific loaders
+
+For Dexcom and FreeStyle Libre exports (which have non-standard headers), use the dedicated loaders:
+
+```python
+df = io.load_dexcom("dexcom_export.csv")     # skips Dexcom header row
+df = io.load_libre("libre_export.csv")       # skips Libre 2-row header
+```
+
+---
+
 ## What you can do in 30 seconds
 
 ```python
@@ -31,21 +135,6 @@ print(glycosignal.time_in_range_percent(df, low=70, high=180))  # 81.2
 result = glycosignal.create_sliding_windows(df, window_hours=24)
 X = glycosignal.build_feature_map(result.windows)
 print(X.shape)  # (7, 23)
-```
-
----
-
-## Installation
-
-```bash
-pip install GlycoSignal
-```
-
-Optional extras:
-
-```bash
-pip install "GlycoSignal[dev]"     # pytest, black, ruff, mypy
-pip install "GlycoSignal[report]"  # HTML reports (adds Jinja2)
 ```
 
 ---
@@ -93,37 +182,93 @@ metrics.cv(p)
 metrics.lbgi(p)
 ```
 
-#### All available metrics
+#### Callable metric functions
+
+These are called directly from the `metrics` module and accept parameters. All accept a DataFrame or `PreparedCGMData`.
 
 | Feature | Description | Computation |
 |---|---|---|
-| `mean_glucose` | Mean BGL | μ = (1/N) Σ Xᵢ |
-| `median_glucose` | Median BGL | Middle value of sorted readings |
-| `min_glucose` | Minimum BGL | Min(X₁, ..., Xₙ) |
-| `max_glucose` | Maximum BGL | Max(X₁, ..., Xₙ) |
-| `q1_glucose` | First quartile of BGL | Q1 = Percentile(X, 25) |
-| `q3_glucose` | Third quartile of BGL | Q3 = Percentile(X, 75) |
-| `sd` | Standard deviation of BGL | σ = √(Σ(Xᵢ - μ)² / N) |
-| `cv` | Coefficient of variation of BGL | CV = (σ / μ) × 100 |
-| `j_index` | J-index (glycemic variability) | J = 0.001 × (μ + σ)² |
-| `mage` | Mean Amplitude of Glucose Excursions | Mean of alternating peak-nadir amplitudes exceeding σ |
-| `conga24` | Continuous Overall Net Glycemic Action | SD of {G(t) - G(t - 24h)} for all matched pairs |
-| `time_in_range_minutes` | BGL time inside [low, high] | TIR = Δt × Σ(low ≤ BGL(t) ≤ high) |
-| `time_in_range_percent` | Percent time inside [low, high] | TIR% = (TIR / T) × 100 |
-| `time_below_range_minutes` | BGL time below threshold | TBR = Δt × Σ(BGL(t) ≤ threshold) |
-| `time_below_range_percent` | Percent time below threshold | TBR% = (TBR / T) × 100 |
-| `time_above_range_minutes` | BGL time above threshold | TAR = Δt × Σ(BGL(t) ≥ threshold) |
-| `time_above_range_percent` | Percent time above threshold | TAR% = (TAR / T) × 100 |
-| `lbgi` | Low Blood Glucose Index | LBGI = (1/N) Σ rl(Xᵢ); f(X) = ln(X)^1.084 - 5.381; rl = 22.77 × f² if f ≤ 0 |
-| `hbgi` | High Blood Glucose Index | HBGI = (1/N) Σ rh(Xᵢ); rh = 22.77 × f² if f > 0 |
-| `adrr` | Average Daily Risk Range | ADRR = Max(rl(X₁)...rl(Xₙ)) + Max(rh(X₁)...rh(Xₙ)) |
-| `gri` | Glucose Risk Index | GRI = 3.0 × %TBR₅₄ + 2.4 × %TBR₇₀ + 1.6 × %TAR₂₅₀ + 0.8 × %TAR₁₈₀, capped at 100 |
-| `mean_glucose_excursion` | Mean BGL outside mean ± SD | MGE = (1/K) Σ Xᵢ where Xᵢ < μ - σ or Xᵢ > μ + σ |
-| `mean_glucose_normal` | Mean BGL inside mean ± SD | MGN = (1/K) Σ Xᵢ where μ - σ ≤ Xᵢ ≤ μ + σ |
-| `count_peaks` | Episodes above threshold | Count of rising-edge crossings above threshold |
-| `count_peaks_in_range` | Episodes entering [lower, upper] | Count of rising-edge entries into [lower, upper] |
+| **Basic stats** | | |
+| `mean_glucose(data)` | Mean BGL | μ = (1/N) Σ Xᵢ |
+| `median_glucose(data)` | Median BGL | Middle value of sorted readings |
+| `min_glucose(data)` | Minimum BGL | Min(X₁, ..., Xₙ) |
+| `max_glucose(data)` | Maximum BGL | Max(X₁, ..., Xₙ) |
+| `q1_glucose(data)` | First quartile of BGL | Q1 = Percentile(X, 25) |
+| `q3_glucose(data)` | Third quartile of BGL | Q3 = Percentile(X, 75) |
+| **Variability** | | |
+| `sd(data)` | Standard deviation of BGL | σ = √(Σ(Xᵢ - μ)² / N) |
+| `cv(data)` | Coefficient of variation | CV = (σ / μ) × 100 |
+| `j_index(data)` | J-index (glycemic variability) | J = 0.001 × (μ + σ)² |
+| `mage(data)` | Mean Amplitude of Glucose Excursions | Mean of alternating peak-nadir amplitudes exceeding σ |
+| `conga24(data)` | Continuous Overall Net Glycemic Action | SD of {G(t) - G(t - 24h)} for all matched pairs |
+| **Time-in-range (parametric)** | | |
+| `time_in_range_minutes(data, low, high)` | BGL time inside [low, high] | TIR = Δt × Σ(low ≤ BGL(t) ≤ high) |
+| `time_in_range_percent(data, low, high)` | Percent time inside [low, high] | TIR% = (TIR / T) × 100 |
+| `time_below_range_minutes(data, threshold)` | BGL time below threshold | TBR = Δt × Σ(BGL(t) ≤ threshold) |
+| `time_below_range_percent(data, threshold)` | Percent time below threshold | TBR% = (TBR / T) × 100 |
+| `time_above_range_minutes(data, threshold)` | BGL time above threshold | TAR = Δt × Σ(BGL(t) ≥ threshold) |
+| `time_above_range_percent(data, threshold)` | Percent time above threshold | TAR% = (TAR / T) × 100 |
+| `time_outside_range_minutes(data, low, high)` | BGL time outside [low, high] | TOR = Δt × Σ(BGL(t) < low or BGL(t) > high) |
+| `time_outside_range_percent(data, low, high)` | Percent time outside [low, high] | TOR% = (TOR / T) × 100 |
+| **Risk indices** | | |
+| `lbgi(data)` | Low Blood Glucose Index | LBGI = (1/N) Σ rl(Xᵢ); f(X) = ln(X)^1.084 - 5.381; rl = 22.77 × f² if f ≤ 0 |
+| `hbgi(data)` | High Blood Glucose Index | HBGI = (1/N) Σ rh(Xᵢ); rh = 22.77 × f² if f > 0 |
+| `adrr(data)` | Average Daily Risk Range | ADRR = Max(rl) + Max(rh) |
+| `gri(data)` | Glucose Risk Index | GRI = 3.0×%TBR₅₄ + 2.4×%TBR₇₀ + 1.6×%TAR₂₅₀ + 0.8×%TAR₁₈₀, capped at 100 |
+| **Excursions** | | |
+| `mean_glucose_excursion(data)` | Mean BGL outside mean ± SD | Mean of Xᵢ where Xᵢ < μ - σ or Xᵢ > μ + σ |
+| `mean_glucose_normal(data)` | Mean BGL inside mean ± SD | Mean of Xᵢ where μ - σ ≤ Xᵢ ≤ μ + σ |
+| **Peak counts** | | |
+| `count_peaks(data, threshold)` | Episodes above threshold | Count of rising-edge crossings above threshold |
+| `count_peaks_in_range(data, lower, upper)` | Episodes entering [lower, upper] | Count of rising-edge entries into [lower, upper] |
 
-> **Notation:** N = number of readings, Xᵢ = glucose reading, μ = mean, σ = standard deviation, Δt = time interval between readings, T = total monitoring time, BGL = blood glucose level. LBGI/HBGI share the transform f(X) = ln(X)^1.084 - 5.381 with rl/rh penalizing low/high values respectively.
+> **Notation:** N = readings, Xᵢ = glucose value, μ = mean, σ = SD, Δt = interval between readings, T = total monitoring time.
+
+---
+
+#### Registry feature names
+
+These are the 32 fixed-parameter feature names used in `build_feature_map(feature_names=[...])`. They are pre-wired to specific clinical thresholds and require no parameters.
+
+```python
+glycosignal.list_features()           # all 32 names
+glycosignal.list_features(category="time_in_range")  # filtered by category
+```
+
+| Feature name | Category | Description |
+|---|---|---|
+| `mean_glucose` | basic_stats | Mean glucose (mg/dL) |
+| `median_glucose` | basic_stats | Median glucose (mg/dL) |
+| `min_glucose` | basic_stats | Minimum glucose (mg/dL) |
+| `max_glucose` | basic_stats | Maximum glucose (mg/dL) |
+| `q1_glucose` | basic_stats | 25th percentile glucose (mg/dL) |
+| `q3_glucose` | basic_stats | 75th percentile glucose (mg/dL) |
+| `sd` | variability | Standard deviation of glucose (mg/dL) |
+| `cv` | variability | Coefficient of variation (%) |
+| `j_index` | variability | J-index: 0.001 × (mean + SD)² |
+| `mage` | variability | Mean Amplitude of Glucose Excursions (mg/dL) |
+| `conga24` | variability | SD of glucose differences 24h apart (mg/dL) |
+| `tir_70_180_min` | time_in_range | Minutes in target range 70–180 mg/dL |
+| `tir_70_180_pct` | time_in_range | Percent time in target range 70–180 mg/dL |
+| `tir_70_140_min` | time_in_range | Minutes in tight range 70–140 mg/dL |
+| `tir_70_140_pct` | time_in_range | Percent time in tight range 70–140 mg/dL |
+| `tbr_70_min` | time_in_range | Minutes below 70 mg/dL (level 1 hypoglycemia) |
+| `tbr_70_pct` | time_in_range | Percent time below 70 mg/dL |
+| `tbr_54_min` | time_in_range | Minutes below 54 mg/dL (level 2 hypoglycemia) |
+| `tbr_54_pct` | time_in_range | Percent time below 54 mg/dL |
+| `tar_180_min` | time_in_range | Minutes above 180 mg/dL (level 1 hyperglycemia) |
+| `tar_180_pct` | time_in_range | Percent time above 180 mg/dL |
+| `tar_250_min` | time_in_range | Minutes above 250 mg/dL (level 2 hyperglycemia) |
+| `tar_250_pct` | time_in_range | Percent time above 250 mg/dL |
+| `lbgi` | risk | Low Blood Glucose Index |
+| `hbgi` | risk | High Blood Glucose Index |
+| `adrr` | risk | Average Daily Risk Range |
+| `gri` | risk | Glucose Risk Index (Klonoff et al. 2023) |
+| `mean_glucose_excursion` | excursion | Mean of readings outside mean ± 1SD (mg/dL) |
+| `mean_glucose_normal` | excursion | Mean of readings inside mean ± 1SD (mg/dL) |
+| `peaks_above_140` | peak | Excursion episodes above 140 mg/dL (count) |
+| `peaks_above_180` | peak | Excursion episodes above 180 mg/dL (count) |
+| `peaks_above_250` | peak | Severe hyperglycemic episodes above 250 mg/dL (count) |
 
 ---
 
@@ -312,95 +457,6 @@ glycosignal features windows.csv --features mean_glucose,cv,lbgi,gri
 glycosignal report data.csv --output report.html
 glycosignal list-features
 glycosignal list-features --category risk
-```
-
----
-
-## Input Data Format
-
-GlycoSignal reads **CSV files**. Your CSV needs at minimum a timestamp column and a glucose column.
-
-| Column | Type | Required | Description |
-|--------|------|----------|-------------|
-| `Timestamp` | datetime | Yes | Reading timestamp (any format `pandas` can parse) |
-| `Glucose` | float | Yes | Glucose value in mg/dL |
-| `subject` | string | For multi-subject files | Subject or patient identifier |
-
-**Column names are auto-detected.** You do not need to rename your columns before loading. GlycoSignal recognizes these common names (case-insensitive):
-
-- Timestamp: `Timestamp`, `time`, `datetime`, `date_time`, `date`
-- Glucose: `Glucose`, `Glucose Value (mg/dL)`, `gl`, `sgv`, `glucose_mg_dl`, `bg`, `blood_glucose`
-- Subject: `subject`, `id`, `ptid`, `patient_id`, `subjectid`
-
-If your column names are not recognized, pass them explicitly:
-
-```python
-df = glycosignal.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
-```
-
-**Example CSV (single subject):**
-
-```
-Timestamp,Glucose
-2024-01-15 08:00:00,123
-2024-01-15 08:05:00,121
-2024-01-15 08:10:00,125
-```
-
-**Example CSV (multiple subjects in one file):**
-
-```
-Timestamp,Glucose,subject
-2024-01-15 08:00:00,123,P001
-2024-01-15 08:00:00,135,P002
-2024-01-15 08:05:00,121,P001
-2024-01-15 08:05:00,140,P002
-```
-
-### Working with multiple subjects
-
-If your data has multiple subjects in **one file**, use `load_cgm_file` and specify which column identifies each subject:
-
-```python
-from glycosignal import io
-
-df = io.load_cgm_file("all_subjects.csv", subject_col="ptid")
-```
-
-If each subject is in a **separate CSV file** inside a folder, use `load_cgm_folder`. It auto-derives a `subject` column from each filename:
-
-```python
-df = io.load_cgm_folder("data/subjects/")
-# Adds 'subject' and 'filename' columns automatically
-```
-
-When building sliding windows or feature maps from multi-subject data, use `group_col` to process each subject independently:
-
-```python
-from glycosignal import windows, features
-
-result = windows.create_sliding_windows(df, window_hours=24, group_col="subject")
-X = features.build_feature_map(result.windows)
-# X contains rows for all subjects, with a 'subject' column preserved
-```
-
-### Unit conversion
-
-GlycoSignal expects glucose in **mg/dL**. If your data is in mmol/L, convert first:
-
-```python
-from glycosignal import preprocessing
-
-df = preprocessing.convert_units(df, from_unit="mmol/L", to_unit="mg/dL")
-```
-
-### Device-specific loaders
-
-For Dexcom and FreeStyle Libre exports (which have non-standard headers), use the dedicated loaders:
-
-```python
-df = io.load_dexcom("dexcom_export.csv")     # skips Dexcom header row
-df = io.load_libre("libre_export.csv")       # skips Libre 2-row header
 ```
 
 ---
