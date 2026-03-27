@@ -36,7 +36,7 @@ Submodules
 - :mod:`glycosignal.cli` -- command-line interface
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Submodule imports (lazy-style: import the modules, not everything from them)
