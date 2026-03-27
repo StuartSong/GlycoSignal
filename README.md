@@ -84,15 +84,35 @@ metrics.lbgi(p)
 
 #### All available metrics
 
-| Category | Functions |
-|---|---|
-| Basic stats | `mean_glucose`, `median_glucose`, `min_glucose`, `max_glucose`, `q1_glucose`, `q3_glucose` |
-| Variability | `sd`, `cv`, `j_index`, `mage`, `conga24` |
-| Time-in-range (minutes) | `time_in_range_minutes`, `time_below_range_minutes`, `time_above_range_minutes` |
-| Time-in-range (percent) | `time_in_range_percent`, `time_below_range_percent`, `time_above_range_percent` |
-| Risk indices | `lbgi`, `hbgi`, `adrr`, `gri` |
-| Excursions | `mean_glucose_excursion`, `mean_glucose_normal` |
-| Peak counts | `count_peaks`, `count_peaks_in_range` |
+| Feature | Description | Computation |
+|---|---|---|
+| `mean_glucose` | Mean BGL | μ = (1/N) Σ Xᵢ |
+| `median_glucose` | Median BGL | Middle value of sorted readings |
+| `min_glucose` | Minimum BGL | Min(X₁, ..., Xₙ) |
+| `max_glucose` | Maximum BGL | Max(X₁, ..., Xₙ) |
+| `q1_glucose` | First quartile of BGL | Q1 = Percentile(X, 25) |
+| `q3_glucose` | Third quartile of BGL | Q3 = Percentile(X, 75) |
+| `sd` | Standard deviation of BGL | σ = √(Σ(Xᵢ - μ)² / N) |
+| `cv` | Coefficient of variation of BGL | CV = (σ / μ) × 100 |
+| `j_index` | J-index (glycemic variability) | J = 0.001 × (μ + σ)² |
+| `mage` | Mean Amplitude of Glucose Excursions | Mean of alternating peak-nadir amplitudes exceeding σ |
+| `conga24` | Continuous Overall Net Glycemic Action | SD of {G(t) - G(t - 24h)} for all matched pairs |
+| `time_in_range_minutes` | BGL time inside [low, high] | TIR = Δt × Σ(low ≤ BGL(t) ≤ high) |
+| `time_in_range_percent` | Percent time inside [low, high] | TIR% = (TIR / T) × 100 |
+| `time_below_range_minutes` | BGL time below threshold | TBR = Δt × Σ(BGL(t) ≤ threshold) |
+| `time_below_range_percent` | Percent time below threshold | TBR% = (TBR / T) × 100 |
+| `time_above_range_minutes` | BGL time above threshold | TAR = Δt × Σ(BGL(t) ≥ threshold) |
+| `time_above_range_percent` | Percent time above threshold | TAR% = (TAR / T) × 100 |
+| `lbgi` | Low Blood Glucose Index | LBGI = (1/N) Σ rl(Xᵢ); f(X) = ln(X)^1.084 - 5.381; rl = 22.77 × f² if f ≤ 0 |
+| `hbgi` | High Blood Glucose Index | HBGI = (1/N) Σ rh(Xᵢ); rh = 22.77 × f² if f > 0 |
+| `adrr` | Average Daily Risk Range | ADRR = Max(rl(X₁)...rl(Xₙ)) + Max(rh(X₁)...rh(Xₙ)) |
+| `gri` | Glucose Risk Index | GRI = 3.0 × %TBR₅₄ + 2.4 × %TBR₇₀ + 1.6 × %TAR₂₅₀ + 0.8 × %TAR₁₈₀, capped at 100 |
+| `mean_glucose_excursion` | Mean BGL outside mean ± SD | MGE = (1/K) Σ Xᵢ where Xᵢ < μ - σ or Xᵢ > μ + σ |
+| `mean_glucose_normal` | Mean BGL inside mean ± SD | MGN = (1/K) Σ Xᵢ where μ - σ ≤ Xᵢ ≤ μ + σ |
+| `count_peaks` | Episodes above threshold | Count of rising-edge crossings above threshold |
+| `count_peaks_in_range` | Episodes entering [lower, upper] | Count of rising-edge entries into [lower, upper] |
+
+> **Notation:** N = number of readings, Xᵢ = glucose reading, μ = mean, σ = standard deviation, Δt = time interval between readings, T = total monitoring time, BGL = blood glucose level. LBGI/HBGI share the transform f(X) = ln(X)^1.084 - 5.381 with rl/rh penalizing low/high values respectively.
 
 ---
 
