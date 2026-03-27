@@ -42,9 +42,6 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.5",
 ]
-report = [
-    "jinja2>=3.1",
-]
 docs = [
     "mkdocs-material>=9.0",
     "mkdocstrings[python]>=0.24",
@@ -55,7 +52,6 @@ all = [
     "black>=23.0",
     "ruff>=0.1",
     "mypy>=1.5",
-    "jinja2>=3.1",
     "mkdocs-material>=9.0",
     "mkdocstrings[python]>=0.24",
 ]

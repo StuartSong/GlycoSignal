@@ -11,7 +11,6 @@ Commands
 - ``glycosignal summary input.csv``
 - ``glycosignal windows input.csv [--window-hours N] [--overlap-hours N] [--output FILE]``
 - ``glycosignal features windows.csv [--output FILE] [--features F1,F2,...]``
-- ``glycosignal report input.csv [--output FILE]``
 - ``glycosignal list-features [--category CAT]``
 """
 
@@ -158,29 +157,6 @@ def cmd_features(args: argparse.Namespace) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Subcommand: report
-# ─────────────────────────────────────────────────────────────────────────────
-
-def cmd_report(args: argparse.Namespace) -> None:
-    """Generate an HTML summary report."""
-    from .io import load_csv
-    from .preprocessing import clean_cgm, standardize_columns
-    from .report import generate_summary_report
-
-    df = load_csv(args.input)
-    df = standardize_columns(df)
-    df = clean_cgm(df)
-
-    if df.empty:
-        print("Error: No valid CGM data found after cleaning.", file=sys.stderr)
-        sys.exit(1)
-
-    output = args.output or (Path(args.input).stem + "_report.html")
-    generate_summary_report(df, output_path=output)
-    print(f"Report saved: {output}")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Subcommand: list-features
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -218,7 +194,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "  glycosignal summary data.csv\n"
             "  glycosignal windows data.csv --window-hours 24\n"
             "  glycosignal features windows.csv --output features.csv\n"
-            "  glycosignal report data.csv --output report.html\n"
             "  glycosignal list-features\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -272,12 +247,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_features.add_argument("--output", "-o", default=None, help="Output CSV path.")
     p_features.set_defaults(func=cmd_features)
-
-    # ── report ───────────────────────────────────────────────────────────
-    p_report = subparsers.add_parser("report", help="Generate an HTML summary report.")
-    p_report.add_argument("input", help="Path to CGM CSV file.")
-    p_report.add_argument("--output", "-o", default=None, help="Output HTML path.")
-    p_report.set_defaults(func=cmd_report)
 
     # ── list-features ─────────────────────────────────────────────────────
     p_list = subparsers.add_parser("list-features", help="List all registered feature names.")

@@ -32,7 +32,6 @@ Submodules
 - :mod:`glycosignal.windows` -- sliding window creation
 - :mod:`glycosignal.detect` -- event detection (hypo, hyper, nocturnal, postprandial)
 - :mod:`glycosignal.plotting` -- matplotlib visualization utilities
-- :mod:`glycosignal.report` -- HTML summary report generation
 - :mod:`glycosignal.cli` -- command-line interface
 """
 
@@ -50,7 +49,6 @@ from . import (  # noqa: F401
     plotting,
     preprocessing,
     registry,
-    report,
     schemas,
     windows,
 )
@@ -139,14 +137,11 @@ from .detect import (  # noqa: F401
     detect_postprandial_excursions,
 )
 
-# Reporting
-from .report import generate_summary_report  # noqa: F401
-
 __all__ = [
     "__version__",
     # Submodules
     "schemas", "io", "preprocessing", "metrics", "registry",
-    "features", "windows", "detect", "plotting", "report",
+    "features", "windows", "detect", "plotting",
     # Data structures
     "PreparedCGMData", "prepare",
     # Metrics
@@ -176,6 +171,4 @@ __all__ = [
     # Detection
     "detect_hypoglycemia", "detect_hyperglycemia",
     "detect_nocturnal_events", "detect_postprandial_excursions",
-    # Report
-    "generate_summary_report",
 ]

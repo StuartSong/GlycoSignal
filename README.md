@@ -34,7 +34,6 @@ Analyze continuous glucose monitor (CGM) data in Python with individually callab
   - [Preprocessing](#preprocessing)
   - [Event detection](#event-detection)
   - [Plotting](#plotting)
-  - [Reporting](#reporting)
   - [Command-line interface](#command-line-interface)
 - [License](#license)
 
@@ -44,12 +43,6 @@ Analyze continuous glucose monitor (CGM) data in Python with individually callab
 
 ```bash
 pip install GlycoSignal
-```
-
-Optional extras:
-
-```bash
-pip install "GlycoSignal[report]"  # HTML reports (adds Jinja2)
 ```
 
 ---
@@ -359,16 +352,6 @@ fig, ax = plotting.plot_histogram(df)
 fig.savefig("output.png", dpi=150)
 ```
 
-### Reporting
-
-Generates a self-contained HTML report with summary metrics, TIR, risk indices, and embedded plots.
-
-```python
-from glycosignal import report
-
-report.generate_summary_report(df, output_path="cgm_report.html")
-```
-
 ### Command-line interface
 
 After installation, the `glycosignal` command is available from any terminal:
@@ -378,7 +361,6 @@ glycosignal summary data.csv
 glycosignal windows data.csv --window-hours 24 --overlap-hours 0 --output windows.csv
 glycosignal features windows.csv --output features.csv
 glycosignal features windows.csv --features mean_glucose,cv,lbgi,gri
-glycosignal report data.csv --output report.html
 glycosignal list-features
 glycosignal list-features --category risk
 ```
