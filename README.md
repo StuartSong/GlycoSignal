@@ -316,18 +316,92 @@ glycosignal list-features --category risk
 
 ---
 
-## Canonical Data Format
+## Input Data Format
 
-All functions expect a DataFrame with these two columns:
+GlycoSignal reads **CSV files**. Your CSV needs at minimum a timestamp column and a glucose column.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `Timestamp` | datetime | Reading timestamp |
-| `Glucose` | float | Glucose in mg/dL |
+| Column | Type | Required | Description |
+|--------|------|----------|-------------|
+| `Timestamp` | datetime | Yes | Reading timestamp (any format `pandas` can parse) |
+| `Glucose` | float | Yes | Glucose value in mg/dL |
+| `subject` | string | For multi-subject files | Subject or patient identifier |
 
-Optional metadata columns: `subject`, `filename`, `sensor`, `date`, `window_id`.
+**Column names are auto-detected.** You do not need to rename your columns before loading. GlycoSignal recognizes these common names (case-insensitive):
 
-`preprocessing.standardize_columns(df)` maps common alternatives (`"time"`, `"gl"`, `"Glucose Value (mg/dL)"`, etc.) to canonical names automatically.
+- Timestamp: `Timestamp`, `time`, `datetime`, `date_time`, `date`
+- Glucose: `Glucose`, `Glucose Value (mg/dL)`, `gl`, `sgv`, `glucose_mg_dl`, `bg`, `blood_glucose`
+- Subject: `subject`, `id`, `ptid`, `patient_id`, `subjectid`
+
+If your column names are not recognized, pass them explicitly:
+
+```python
+df = glycosignal.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
+```
+
+**Example CSV (single subject):**
+
+```
+Timestamp,Glucose
+2024-01-15 08:00:00,123
+2024-01-15 08:05:00,121
+2024-01-15 08:10:00,125
+```
+
+**Example CSV (multiple subjects in one file):**
+
+```
+Timestamp,Glucose,subject
+2024-01-15 08:00:00,123,P001
+2024-01-15 08:00:00,135,P002
+2024-01-15 08:05:00,121,P001
+2024-01-15 08:05:00,140,P002
+```
+
+### Working with multiple subjects
+
+If your data has multiple subjects in **one file**, use `load_cgm_file` and specify which column identifies each subject:
+
+```python
+from glycosignal import io
+
+df = io.load_cgm_file("all_subjects.csv", subject_col="ptid")
+```
+
+If each subject is in a **separate CSV file** inside a folder, use `load_cgm_folder`. It auto-derives a `subject` column from each filename:
+
+```python
+df = io.load_cgm_folder("data/subjects/")
+# Adds 'subject' and 'filename' columns automatically
+```
+
+When building sliding windows or feature maps from multi-subject data, use `group_col` to process each subject independently:
+
+```python
+from glycosignal import windows, features
+
+result = windows.create_sliding_windows(df, window_hours=24, group_col="subject")
+X = features.build_feature_map(result.windows)
+# X contains rows for all subjects, with a 'subject' column preserved
+```
+
+### Unit conversion
+
+GlycoSignal expects glucose in **mg/dL**. If your data is in mmol/L, convert first:
+
+```python
+from glycosignal import preprocessing
+
+df = preprocessing.convert_units(df, from_unit="mmol/L", to_unit="mg/dL")
+```
+
+### Device-specific loaders
+
+For Dexcom and FreeStyle Libre exports (which have non-standard headers), use the dedicated loaders:
+
+```python
+df = io.load_dexcom("dexcom_export.csv")     # skips Dexcom header row
+df = io.load_libre("libre_export.csv")       # skips Libre 2-row header
+```
 
 ---
 
