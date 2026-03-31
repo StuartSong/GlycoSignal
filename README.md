@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/badge/pypi-v0.2.0-blue" alt="PyPI version"/></a>
+  <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/badge/pypi-v0.1.3-blue" alt="PyPI version"/></a>
   <a href="https://pypi.org/project/GlycoSignal/"><img src="https://img.shields.io/badge/python-3.10%2B-blue" alt="Python versions"/></a>
   <a href="https://github.com/StuartSong/GlycoSignal/actions/workflows/tests.yml"><img src="https://github.com/StuartSong/GlycoSignal/actions/workflows/tests.yml/badge.svg" alt="Tests"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
@@ -11,11 +11,7 @@
 
 # GlycoSignal
 
-Analyze Continuous Glucose Monitor (CGM) data in Python with individually callable glycemic metrics, sliding-window pipelines, and ML-ready feature matrices.
-
----
-
-## Installation
+Python library for CGM data analysis — individually callable glycemic metrics, day/sliding-window segmentation, and ML-ready feature matrices.
 
 ```bash
 pip install GlycoSignal
@@ -23,336 +19,202 @@ pip install GlycoSignal
 
 ---
 
-## Input Data Format
-
-GlycoSignal reads **CSV files**. The only required columns are a timestamp and a glucose value.
-
-| Column | Type | Required | Description |
-|--------|------|----------|-------------|
-| `Timestamp` | datetime | Yes | Reading timestamp (any format pandas can parse) |
-| `Glucose` | float | Yes | Glucose value in mg/dL |
-| `subject` | string | Multi-subject only | Subject or patient identifier |
-
-**Column names are auto-detected** (case-insensitive). Recognized alternatives:
-
-- Timestamp: `Timestamp`, `time`, `datetime`, `date_time`, `date`
-- Glucose: `Glucose`, `Glucose Value (mg/dL)`, `gl`, `sgv`, `glucose_mg_dl`, `bg`, `blood_glucose`
-- Subject: `subject`, `id`, `ptid`, `patient_id`, `subjectid`
-
-If your column names are not recognized, pass them explicitly:
+## Quick start
 
 ```python
-import glycosignal as gs
+import glycosignal
 
-df = gs.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
-```
+df = glycosignal.load_csv("cgm.csv")
+df = glycosignal.clean_cgm(df)
 
-### Single subject
+# Individual metrics
+glycosignal.mean_glucose(df)                             # 138.5
+glycosignal.time_in_range_percent(df, low=70, high=180)  # 93.1
 
-```
-Timestamp,Glucose
-2024-01-15 08:00:00,123
-2024-01-15 08:05:00,121
-2024-01-15 08:10:00,125
-```
-
-### Multiple subjects
-
-**One file with a subject column:**
-
-```
-Timestamp,Glucose,subject
-2024-01-15 08:00:00,123,P001
-2024-01-15 08:00:00,135,P002
-2024-01-15 08:05:00,121,P001
-```
-
-```python
-from glycosignal import io
-
-df = io.load_cgm_file("all_subjects.csv", subject_col="ptid")
-```
-
-**One CSV per subject in a folder** (subject column derived from filename):
-
-```python
-df = io.load_cgm_folder("data/subjects/")
-```
-
-When windowing or building feature maps from multi-subject data, pass `group_col`:
-
-```python
-from glycosignal import windows, features
-
-result = windows.create_sliding_windows(df, window_hours=24, group_col="subject")
-X = features.build_feature_map(result.windows)
-```
-
-### Unit conversion
-
-GlycoSignal expects glucose in **mg/dL**. Convert mmol/L first:
-
-```python
-from glycosignal import preprocessing
-
-df = preprocessing.convert_units(df, from_unit="mmol/L", to_unit="mg/dL")
+# Segment → feature matrix  (the standard pipeline)
+segs = glycosignal.create_day_segments(df)               # 24 h, midnight anchor
+X    = glycosignal.build_feature_map(segs.windows)       # 32 features × n_days
 ```
 
 ---
 
-## Quickstart
+## Input format
+
+Two required columns; everything else is auto-detected (case-insensitive).
+
+| Column | Required | Recognized aliases |
+|--------|----------|--------------------|
+| `Timestamp` | Yes | `time`, `datetime`, `date_time`, `date` |
+| `Glucose` | Yes | `Glucose Value (mg/dL)`, `gl`, `sgv`, `glucose_mg_dl`, `bg` |
+| `subject` | Multi-subject only | `id`, `ptid`, `patient_id`, `subjectid` |
 
 ```python
-import glycosignal as gs
+# Override auto-detection
+df = glycosignal.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
 
-df = gs.load_csv("examples/sample_cgm.csv")  # sample file included in repo
-df = gs.clean_cgm(df)
+# Multiple subjects — one file with subject column
+df = glycosignal.io.load_cgm_file("all.csv", subject_col="ptid")
 
-# One metric
-print(gs.mean_glucose(df))                          # 138.5
-print(gs.time_in_range_percent(df, low=70, high=180))  # 93.1
-
-# Daily segments — midnight-to-midnight (recommended pre-step for feature extraction)
-segs = gs.create_day_segments(df)
-
-# Daily segments starting at 8 AM instead of midnight
-segs = gs.create_day_segments(df, anchor_time="08:00")
-
-# Sliding windows: 6-hour window, 1-hour step
-result = gs.create_sliding_windows(df, window_hours=6, step_hours=1)
-
-# Full feature matrix (32 features, one row per window)
-X = gs.build_feature_map(segs.windows)
-print(X.shape)
+# Multiple subjects — one CSV per subject in a folder
+df = glycosignal.io.load_cgm_folder("data/subjects/")
 ```
 
 ---
 
-## Data Segmentation
+## Data segmentation
 
-Before computing features, segment the cleaned CGM trace into windows. Both functions return a `WindowResult(windows, metadata)` named tuple whose `windows` DataFrame flows directly into `features.build_feature_map()`.
+Both functions return `WindowResult(windows, metadata)`. The `windows` DataFrame flows directly into `build_feature_map()`.
 
 ### Daily segments
 
-`create_day_segments` is the recommended entry point for per-day analysis. It produces non-overlapping 24-hour windows with no configuration required.
-
 ```python
-from glycosignal import windows, features
+from glycosignal import windows
 
-# Midnight-to-midnight (default)
-segs = windows.create_day_segments(df)
-
-# Start each day at 8:00 AM instead of midnight
-segs = windows.create_day_segments(df, anchor_time="08:00")
-
-# Multi-subject data
-segs = windows.create_day_segments(df, anchor_time="08:00", group_col="subject")
+segs = windows.create_day_segments(df)                    # midnight–midnight (default)
+segs = windows.create_day_segments(df, anchor_time="08:00")             # 8 AM–8 AM
+segs = windows.create_day_segments(df, anchor_time="08:00",
+                                   min_fraction=0.7,      # drop days < 70 % coverage
+                                   group_col="subject")   # multi-subject
 
 print(segs.metadata)
 # {'n_groups': 1, 'n_valid_windows': 7, 'n_discarded_partial_days': 0, ...}
-
-# Feed directly into feature extraction
-X = features.build_feature_map(segs.windows)
 ```
 
 ### Sliding windows
 
-`create_sliding_windows` gives full control over window size, step size, and anchor time.
-
 ```python
-from glycosignal import windows
-
-# 6-hour windows, 1-hour step (lots of overlap)
 result = windows.create_sliding_windows(df, window_hours=6, step_hours=1)
-
-# 12-hour windows anchored at 8 AM, no overlap
-result = windows.create_sliding_windows(df, window_hours=12, step_hours=12, anchor_time="08:00")
-
-# 24-hour windows with 12-hour overlap (legacy overlap_hours shorthand)
+result = windows.create_sliding_windows(df, window_hours=12, step_hours=12,
+                                        anchor_time="08:00")
 result = windows.create_sliding_windows(df, window_hours=24, overlap_hours=12)
-
-# Multi-subject with custom step
-result = windows.create_sliding_windows(df, window_hours=24, step_hours=6, group_col="subject")
+result = windows.create_sliding_windows(df, window_hours=24, step_hours=6,
+                                        group_col="subject")
 ```
 
-### Output format
+Key parameters: `window_hours`, `step_hours`, `anchor_time`, `min_fraction` (default `0.0` — keep all windows), `group_col`, `interpolate`, `max_gap_points`.
 
-The `windows` DataFrame is long-format — one row per (window, time-point) pair:
+### Output
 
-| Column | Description |
-|--------|-------------|
-| `window_id` | Unique identifier, e.g. `"S01_2023-01-02"` (midnight) or `"S01_2023-01-02_0800"` (8 AM anchor) |
-| `Timestamp` | 5-minute grid point |
-| `Glucose` | Glucose value in mg/dL (short gaps filled by PCHIP interpolation) |
-| `subject` | Subject identifier (when `group_col` is present) |
-| `date` | Calendar date of the window start |
+The `windows` DataFrame is **long-format** — one row per (window, time-point):
 
-Windows with fewer than `min_fraction` (default 70%) of observed readings are dropped automatically. Pass `result.windows` directly to `features.build_feature_map()` to compute a feature matrix.
+| `window_id` | `subject` | `date` | `Timestamp` | `Glucose` |
+|-------------|-----------|--------|-------------|-----------|
+| `S01_2023-01-02` | S01 | 2023-01-02 | 2023-01-02 00:00 | 112.4 |
 
-### Saving segments as CSV
+Non-midnight anchors append `_HHMM` to the window ID (e.g. `S01_2023-01-02_0800`).
 
-Use `pivot_windows_wide()` to convert the long-format result into a wide-format CSV — one row per window, one column per time point:
+### Saving as wide-format CSV
 
 ```python
-from glycosignal import windows
-
-segs = windows.create_day_segments(df)
 wide = windows.pivot_windows_wide(segs.windows)
-wide.to_csv("day_segments.csv", index=False)
+wide.to_csv("segments.csv", index=False)
+# → columns: date | subject | 00:00 | 00:05 | … | 23:55
+# For non-midnight anchor (e.g. "08:00"): 08:00 | … | 23:55 | 00:00 | … | 07:55
 ```
-
-The saved file looks like this:
-
-| `date` | `subject` | `00:00` | `00:05` | … | `23:55` |
-|--------|-----------|---------|---------|---|---------|
-| 2023-01-02 | S01 | 112.4 | 115.1 | … | 98.3 |
-| 2023-01-03 | S01 | 103.7 | 101.2 | … | 110.5 |
-
-For a non-midnight anchor (e.g. `"08:00"`) the time columns run `08:00`, `08:05`, …, `23:55`, `00:00`, …, `07:55` in chronological order. Each cell is the glucose reading at that time point; cells are `NaN` if a reading was missing and could not be interpolated.
 
 ---
 
-## Computing Glycemic Metrics
+## Glycemic metrics
 
-### Individual metrics
-
-Every metric is a standalone function. Call directly on any cleaned DataFrame:
+Every metric is a standalone function. See the **[full metric reference](https://github.com/StuartSong/GlycoSignal/blob/main/docs/METRICS.md)** for all formulas.
 
 ```python
 from glycosignal import metrics
 
-metrics.mean_glucose(df)                             # 138.5
-metrics.cv(df)                                       # 17.7 (%)
-metrics.time_in_range_percent(df, low=70, high=180)  # 93.1
-metrics.lbgi(df)                                     # 0.01
-metrics.mage(df)                                     # 27.0
-metrics.gri(df)                                      # 7.2
+# Core
+metrics.mean_glucose(df)                              # 138.5
+metrics.median_glucose(df)
+metrics.std_glucose(df)
+metrics.cv(df)                                        # 17.7 %
+metrics.time_in_range_percent(df, low=70, high=180)   # 93.1 %
+metrics.time_above_range(df, threshold=180)
+metrics.time_below_range(df, threshold=70)
+
+# Variability
+metrics.mage(df)                                      # 27.0
+metrics.j_index(df)
+metrics.conga(df)
+metrics.modd(df)
+metrics.grade(df)
+
+# Risk indices
+metrics.lbgi(df)
+metrics.hbgi(df)
+metrics.adrr(df)
+metrics.gri(df)                                       # 7.2
+
+# Grouped helpers — return dicts
+metrics.basic_stats(df)          # mean, median, min, max, q1, q3
+metrics.variability_metrics(df)  # sd, cv, j_index, mage
+metrics.risk_indices(df)         # lbgi, hbgi, adrr, gri
+metrics.summary_dict(df)         # all of the above combined
 ```
 
-### Grouped summaries
-
-```python
-metrics.basic_stats(df)
-# {'mean': 138.5, 'median': 132.5, 'min': 102.0, 'max': 193.0, 'q1': 117.0, 'q3': 158.25}
-
-metrics.variability_metrics(df)
-# {'sd': 24.5, 'cv': 17.7, 'j_index': 26.6, 'mage': 27.0}
-
-metrics.risk_indices(df)
-# {'lbgi': 0.01, 'hbgi': 2.3, 'adrr': 10.5, 'gri': 7.2}
-
-metrics.summary_dict(df)    # all of the above in one dict
-```
-
-**Performance tip:** Call `prepare()` once when computing many metrics on the same data:
+**Performance tip** — call `prepare()` once when computing many metrics on the same data:
 
 ```python
 from glycosignal.schemas import prepare
-
 p = prepare(df)
-metrics.mean_glucose(p)
-metrics.cv(p)
-metrics.lbgi(p)
+metrics.mean_glucose(p); metrics.cv(p); metrics.lbgi(p)
 ```
-
-### Full metric reference
-
-See the **[full metric reference on GitHub](https://github.com/StuartSong/GlycoSignal/blob/main/docs/METRICS.md)** for all callable functions, formulas, and grouped summary helpers.
 
 ---
 
-## Building ML Feature Matrices
-
-The full pipeline: load, clean, window, extract features, train.
+## Feature matrices
 
 ```python
-import glycosignal as gs
 from glycosignal import windows, features
-from sklearn.ensemble import RandomForestClassifier
 
-df = gs.load_csv("cgm.csv")
-df = gs.clean_cgm(df)
+segs = windows.create_day_segments(df)
+X = features.build_feature_map(segs.windows)           # 32 features × n_windows
 
-result = windows.create_sliding_windows(df, window_hours=24, overlap_hours=0)
-X = features.build_feature_map(result.windows)
+# Subset
+X = features.build_feature_map(segs.windows,
+    feature_names=["mean_glucose", "cv", "tir_70_180_pct", "mage", "lbgi"])
 
-feature_cols = [c for c in X.columns if c not in ("window_id", "subject", "date")]
-clf = RandomForestClassifier()
-clf.fit(X[feature_cols], y)
-```
-
-Select specific features:
-
-```python
-X = features.build_feature_map(
-    result.windows,
-    feature_names=["mean_glucose", "cv", "tir_70_180_pct", "mage", "lbgi"],
-)
-```
-
-Feature vector for a single window:
-
-```python
+# Single window → dict
 features.build_feature_vector(window_df, feature_names=["mean_glucose", "cv"])
-# {'mean_glucose': 138.5, 'cv': 17.7}
-```
 
-Feature table from a list of DataFrames (one per subject):
-
-```python
-features.build_feature_table(
-    [df_s01, df_s02, df_s03],
-    record_ids=["S01", "S02", "S03"],
-)
+# List of DataFrames (one per subject)
+features.build_feature_table([df_s01, df_s02], record_ids=["S01", "S02"])
 ```
 
 ### Feature registry
 
-GlycoSignal has 32 built-in features organized by category, pre-wired to standard clinical thresholds.
-
 ```python
-import glycosignal as gs
+glycosignal.list_features()                      # all 32 names
+glycosignal.list_features(category="risk")       # ['adrr', 'gri', 'hbgi', 'lbgi']
+glycosignal.get_feature_metadata()               # DataFrame: name | description | category
+glycosignal.get_feature("gri").description       # 'Glucose Risk Index (Klonoff et al. 2023)'
 
-gs.list_features()                         # all 32 names
-gs.list_features(category="risk")          # ['adrr', 'gri', 'hbgi', 'lbgi']
-gs.get_feature_metadata()                  # DataFrame: name | description | category
-gs.get_feature("gri").description          # 'Glucose Risk Index (Klonoff et al. 2023)'
-```
-
-Add a custom feature:
-
-```python
+# Register a custom feature
 from glycosignal.registry import DEFAULT_REGISTRY
-
-DEFAULT_REGISTRY.register(
-    name="my_metric",
-    func=my_function,
-    description="Custom metric",
-    category="variability",
-)
+DEFAULT_REGISTRY.register(name="my_metric", func=my_fn,
+                           description="...", category="variability")
 ```
 
 ---
 
-## Additional Capabilities
-
-### Preprocessing
-
-All functions return cleaned copies. Nothing is modified in place.
+## Preprocessing
 
 ```python
 from glycosignal import preprocessing
 
-df = preprocessing.clean_cgm(df)                    # drop NaN, sort, enforce positive
-report = preprocessing.validate_cgm(df)             # structured quality report
-gaps = preprocessing.detect_gaps(df)                # DataFrame of gap intervals
-df = preprocessing.resample_cgm(df, freq="5min")    # regular grid
-df = preprocessing.interpolate_cgm(df, method="pchip", max_gap_points=12)
+df     = preprocessing.clean_cgm(df)                              # drop NaN, sort, enforce positive
+report = preprocessing.validate_cgm(df)                           # structured quality report
+gaps   = preprocessing.detect_gaps(df)                            # DataFrame of gap intervals
+df     = preprocessing.resample_cgm(df, freq="5min")              # regular grid
+df     = preprocessing.interpolate_cgm(df, method="pchip",
+                                        max_gap_points=12)
+df     = preprocessing.convert_units(df, from_unit="mmol/L",
+                                      to_unit="mg/dL")
 ```
 
-### Event detection
+---
 
-Returns a DataFrame with `start_time`, `end_time`, `duration_minutes`, and `event_type`.
+## Event detection
+
+Returns a DataFrame with `start_time`, `end_time`, `duration_minutes`, `event_type`.
 
 ```python
 from glycosignal import detect
@@ -363,7 +225,9 @@ detect.detect_nocturnal_events(df, start_hour=0, end_hour=6)
 detect.detect_postprandial_excursions(df, rise_threshold=50)
 ```
 
-### Plotting
+---
+
+## Plotting
 
 All functions return `(fig, ax)` and never call `plt.show()`.
 
@@ -377,9 +241,9 @@ fig, ax = plotting.plot_histogram(df)
 fig.savefig("output.png", dpi=150)
 ```
 
-### Command-line interface
+---
 
-After installation, the `glycosignal` command is available from any terminal:
+## CLI
 
 ```bash
 glycosignal summary data.csv
