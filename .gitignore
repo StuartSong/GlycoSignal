@@ -83,3 +83,6 @@ Thumbs.db
 # Documentation build
 site/
 docs/_build/
+
+# PyPI credentials (never commit)
+.pypirc
