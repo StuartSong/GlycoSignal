@@ -80,6 +80,38 @@ def _format_window_params(window_hours: float, overlap_hours: float) -> str:
     return f"{w}_{o}"
 
 
+def _parse_anchor_time(anchor_time: str) -> pd.Timedelta:
+    """Parse an ``"HH:MM"`` string into a :class:`pd.Timedelta` from midnight.
+
+    Parameters
+    ----------
+    anchor_time : str
+        Time string in ``"HH:MM"`` 24-hour format, e.g. ``"08:00"``.
+
+    Returns
+    -------
+    pd.Timedelta
+        Offset from midnight.
+
+    Raises
+    ------
+    ValueError
+        If the string is not valid ``"HH:MM"`` or the time is outside 00:00–23:59.
+    """
+    try:
+        parts = str(anchor_time).strip().split(":")
+        if len(parts) != 2:
+            raise ValueError
+        hh, mm = int(parts[0]), int(parts[1])
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            raise ValueError
+    except (ValueError, AttributeError):
+        raise ValueError(
+            f"anchor_time must be in 'HH:MM' format (e.g. '08:00'), got {anchor_time!r}."
+        )
+    return pd.Timedelta(hours=hh, minutes=mm)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Core sliding window function
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +120,8 @@ def create_sliding_windows(
     df: pd.DataFrame,
     window_hours: float = 24.0,
     overlap_hours: float = 0.0,
+    step_hours: float | None = None,
+    anchor_time: str = "00:00",
     min_fraction: float = 0.7,
     group_col: str = "subject",
     id_cols: list[str] | tuple[str, ...] | None = None,
@@ -98,9 +132,10 @@ def create_sliding_windows(
 ) -> WindowResult:
     """Transform a CGM DataFrame into long-format sliding windows.
 
-    Each window is a contiguous time block of ``window_hours`` hours, stepped
-    by ``window_hours - overlap_hours`` hours.  Windows are aligned to midnight
-    of the first complete calendar day for each group.
+    Each window is a contiguous time block of ``window_hours`` hours.  The step
+    between consecutive window starts is determined by ``step_hours`` (if
+    provided) or ``window_hours - overlap_hours`` (legacy).  Windows are
+    anchored to the time-of-day given by ``anchor_time`` (default midnight).
 
     Parameters
     ----------
@@ -111,8 +146,17 @@ def create_sliding_windows(
     window_hours : float
         Duration of each window in hours.  Default 24.
     overlap_hours : float
-        Overlap between consecutive windows in hours.  Must be less than
-        ``window_hours``.  Default 0.
+        Overlap between consecutive windows in hours.  Only used when
+        ``step_hours`` is ``None``; must be less than ``window_hours``.
+        Default 0.
+    step_hours : float | None
+        Explicit step between window starts in hours.  When provided,
+        ``overlap_hours`` is ignored.  Must be positive.  Default ``None``
+        (falls back to ``window_hours - overlap_hours``).
+    anchor_time : str
+        Time-of-day to align the first window start, in ``"HH:MM"`` 24-hour
+        format.  Default ``"00:00"`` (midnight) preserves backward-compatible
+        behaviour.  Example: ``"08:00"`` starts every window series at 8 AM.
     min_fraction : float
         Minimum fraction of the 5-minute grid points that must have observed
         data for a window to be kept (before interpolation).  Default 0.7
@@ -147,19 +191,29 @@ def create_sliding_windows(
     Raises
     ------
     ValueError
-        If ``overlap_hours >= window_hours``, ``min_fraction`` is out of range,
-        or required columns are missing from *df*.
+        If ``step_hours <= 0``, ``overlap_hours >= window_hours`` (when
+        ``step_hours`` is ``None``), ``min_fraction`` is out of range,
+        ``anchor_time`` is not valid ``"HH:MM"``, or required columns are
+        missing from *df*.
     """
     require_dataframe(df, "df")
 
-    if overlap_hours >= window_hours:
-        raise ValueError(
-            f"overlap_hours ({overlap_hours}) must be less than window_hours ({window_hours})."
-        )
+    if step_hours is not None:
+        if step_hours <= 0:
+            raise ValueError(
+                f"step_hours ({step_hours}) must be positive."
+            )
+    else:
+        if overlap_hours >= window_hours:
+            raise ValueError(
+                f"overlap_hours ({overlap_hours}) must be less than window_hours ({window_hours})."
+            )
     if not (0.0 <= min_fraction <= 1.0):
         raise ValueError(
             f"min_fraction must be between 0.0 and 1.0, got {min_fraction}."
         )
+
+    anchor_offset = _parse_anchor_time(anchor_time)
 
     require_columns(df, [COL_TIMESTAMP, COL_GLUCOSE])
 
@@ -182,7 +236,11 @@ def create_sliding_windows(
     points_per_window = int(window_hours * 60 / 5)
     min_observed = int(np.ceil(min_fraction * points_per_window))
     tolerance = pd.Timedelta(minutes=tolerance_minutes)
-    step = pd.Timedelta(hours=window_hours - overlap_hours)
+    step = (
+        pd.Timedelta(hours=step_hours)
+        if step_hours is not None
+        else pd.Timedelta(hours=window_hours - overlap_hours)
+    )
     window_delta = pd.Timedelta(hours=window_hours)
 
     all_rows: list[dict] = []
@@ -211,14 +269,15 @@ def create_sliding_windows(
 
         first_ts = grp[COL_TIMESTAMP].iloc[0]
         first_midnight = first_ts.normalize()
+        first_anchor = first_midnight + anchor_offset
 
-        # Discard first partial calendar day
-        if first_ts != first_midnight:
-            first_midnight += pd.Timedelta(days=1)
+        # If data starts after today's anchor, defer to the next day's anchor
+        if first_ts > first_anchor:
+            first_anchor += pd.Timedelta(days=1)
             n_discarded += 1
 
         last_ts = grp[COL_TIMESTAMP].iloc[-1]
-        if first_midnight > last_ts:
+        if first_anchor > last_ts:
             continue
 
         # Pre-round readings to nearest 5 min for fast grid matching
@@ -230,7 +289,7 @@ def create_sliding_windows(
         if grp.empty:
             continue
 
-        window_start = first_midnight
+        window_start = first_anchor
         while window_start <= last_ts:
             window_end = window_start + window_delta
             targets = pd.date_range(
@@ -262,9 +321,10 @@ def create_sliding_windows(
                 continue
 
             # Emit one long-format row per time point
-            window_id = (
-                f"{group_value}_{window_start.strftime('%Y-%m-%d')}"
-            )
+            if anchor_time == "00:00":
+                window_id = f"{group_value}_{window_start.strftime('%Y-%m-%d')}"
+            else:
+                window_id = f"{group_value}_{window_start.strftime('%Y-%m-%d_%H%M')}"
             for ts, gl in zip(targets, resampled.values):
                 row = {"window_id": window_id, COL_TIMESTAMP: ts, COL_GLUCOSE: gl}
                 row.update(extra_meta)
@@ -293,6 +353,65 @@ def create_sliding_windows(
     }
 
     return WindowResult(windows=windows_df, metadata=meta)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Convenience: day-level segmentation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def create_day_segments(
+    df: pd.DataFrame,
+    anchor_time: str = "00:00",
+    min_fraction: float = 0.7,
+    group_col: str = "subject",
+    id_cols: list[str] | tuple[str, ...] | None = None,
+    tolerance_minutes: float = 2.5,
+    interpolate: bool = True,
+    max_gap_points: int = 12,
+    show_progress: bool = True,
+) -> WindowResult:
+    """Segment CGM data into non-overlapping 24-hour calendar-day windows.
+
+    This is a convenience wrapper around :func:`create_sliding_windows` with
+    ``window_hours=24`` and ``step_hours=24``.  It is intended as the standard
+    **pre-processing step before feature extraction**: clean the raw CGM trace
+    first (via :func:`~glycosignal.preprocessing.clean_cgm`), then call this
+    function to obtain a consistent set of per-day segments that can be passed
+    directly to :func:`~glycosignal.features.build_feature_map`.
+
+    Parameters
+    ----------\n    df : pd.DataFrame\n        CGM data with ``Timestamp`` and ``Glucose`` columns plus any grouping\n        columns.
+    anchor_time : str\n        Time-of-day at which each day segment starts, in ``\"HH:MM\"`` 24-hour\n        format.  Default ``\"00:00\"`` (midnight).  Use e.g. ``\"08:00\"`` to\n        produce segments that run 08:00 \u2013 08:00 the following day.\n    min_fraction : float\n        Minimum fraction of the expected 288 grid points (at 5-min resolution)\n        that must have observed readings for a day to be retained.  Default 0.7.\n    group_col : str\n        Column used to group data per subject / recording.  Default ``\"subject\"``.\n    id_cols : list[str] | None\n        Additional identifier columns to carry through to the output.\n    tolerance_minutes : float\n        Maximum snap distance (minutes) to a 5-minute grid point.  Default 2.5.\n    interpolate : bool\n        Whether to fill short gaps with PCHIP interpolation.  Default True.\n    max_gap_points : int\n        Maximum consecutive missing grid points to interpolate.  Default 12.\n    show_progress : bool\n        Show a tqdm progress bar.  Default True.
+
+    Returns
+    -------
+    WindowResult
+        Named tuple ``(windows, metadata)``.  Each ``window_id`` encodes the
+        subject and the segment-start date (e.g. ``\"S01_2023-01-02\"`` for a
+        midnight anchor, or ``\"S01_2023-01-02_0800\"`` for an 8 AM anchor).
+
+    Examples
+    --------
+    >>> from glycosignal import windows, features
+    >>> segs = windows.create_day_segments(df)
+    >>> X = features.build_feature_map(segs.windows)
+
+    >>> # Start each day at 8 AM instead of midnight
+    >>> segs = windows.create_day_segments(df, anchor_time="08:00")
+    """
+    return create_sliding_windows(
+        df=df,
+        window_hours=24.0,
+        step_hours=24.0,
+        anchor_time=anchor_time,
+        min_fraction=min_fraction,
+        group_col=group_col,
+        id_cols=id_cols,
+        tolerance_minutes=tolerance_minutes,
+        interpolate=interpolate,
+        max_gap_points=max_gap_points,
+        show_progress=show_progress,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

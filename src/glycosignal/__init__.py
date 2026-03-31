@@ -105,7 +105,7 @@ from .features import (  # noqa: F401
 )
 
 # Window creation
-from .windows import create_sliding_windows, pivot_windows_wide  # noqa: F401
+from .windows import create_day_segments, create_sliding_windows, pivot_windows_wide  # noqa: F401
 
 # Registry convenience
 from .registry import (  # noqa: F401

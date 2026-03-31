@@ -159,3 +159,168 @@ class TestWindowsToRecords:
             assert isinstance(wid, str)
             assert isinstance(sub_df, pd.DataFrame)
             assert "Glucose" in sub_df.columns
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# step_hours parameter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestStepHours:
+    def test_step_hours_equivalent_to_overlap(self):
+        """step_hours=12 should produce same windows as overlap_hours=12."""
+        df = _make_cgm(n_days=3)
+        r_overlap = windows.create_sliding_windows(
+            df, window_hours=24, overlap_hours=12, show_progress=False
+        )
+        r_step = windows.create_sliding_windows(
+            df, window_hours=24, step_hours=12, show_progress=False
+        )
+        assert r_step.metadata["n_valid_windows"] == r_overlap.metadata["n_valid_windows"]
+        pd.testing.assert_frame_equal(
+            r_step.windows.reset_index(drop=True),
+            r_overlap.windows.reset_index(drop=True),
+        )
+
+    def test_step_hours_zero_raises(self):
+        df = _make_cgm(n_days=2)
+        with pytest.raises(ValueError, match="step_hours"):
+            windows.create_sliding_windows(df, step_hours=0, show_progress=False)
+
+    def test_step_hours_negative_raises(self):
+        df = _make_cgm(n_days=2)
+        with pytest.raises(ValueError, match="step_hours"):
+            windows.create_sliding_windows(df, step_hours=-6, show_progress=False)
+
+    def test_step_hours_takes_precedence_over_overlap(self):
+        """When step_hours is given, overlap_hours >= window_hours should not raise."""
+        df = _make_cgm(n_days=3)
+        # overlap_hours=24 would normally raise, but step_hours bypasses that check
+        result = windows.create_sliding_windows(
+            df, window_hours=24, overlap_hours=24, step_hours=12, show_progress=False
+        )
+        assert result.metadata["n_valid_windows"] > 0
+
+    def test_step_larger_than_window_produces_gaps(self):
+        """step_hours > window_hours is a valid 'sample every N hours' use case."""
+        df = _make_cgm(n_days=5)
+        result = windows.create_sliding_windows(
+            df, window_hours=6, step_hours=24, show_progress=False
+        )
+        assert isinstance(result.windows, pd.DataFrame)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# anchor_time parameter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAnchorTime:
+    def test_midnight_anchor_matches_default(self):
+        """anchor_time='00:00' must be identical to default behaviour."""
+        df = _make_cgm(n_days=3)
+        r_default = windows.create_sliding_windows(df, show_progress=False)
+        r_midnight = windows.create_sliding_windows(
+            df, anchor_time="00:00", show_progress=False
+        )
+        pd.testing.assert_frame_equal(
+            r_default.windows.reset_index(drop=True),
+            r_midnight.windows.reset_index(drop=True),
+        )
+
+    def test_8am_anchor_windows_start_at_8(self):
+        """All windows from an 08:00 anchor must start at 08:00."""
+        df = _make_cgm(n_days=4)
+        result = windows.create_sliding_windows(
+            df, window_hours=24, anchor_time="08:00", show_progress=False
+        )
+        if not result.windows.empty:
+            starts = (
+                result.windows.groupby("window_id")["Timestamp"].min()
+            )
+            assert (starts.dt.hour == 8).all(), "Not all windows start at 08:00"
+            assert (starts.dt.minute == 0).all()
+
+    def test_invalid_anchor_format_raises(self):
+        df = _make_cgm(n_days=2)
+        with pytest.raises(ValueError, match="anchor_time"):
+            windows.create_sliding_windows(df, anchor_time="8am", show_progress=False)
+
+    def test_invalid_anchor_out_of_range_raises(self):
+        df = _make_cgm(n_days=2)
+        with pytest.raises(ValueError, match="anchor_time"):
+            windows.create_sliding_windows(df, anchor_time="25:00", show_progress=False)
+
+    def test_non_midnight_window_id_contains_hhmm(self):
+        """window_id for a non-midnight anchor should include the HH:MM suffix."""
+        df = _make_cgm(n_days=4)
+        result = windows.create_sliding_windows(
+            df, window_hours=24, anchor_time="08:00", show_progress=False
+        )
+        if not result.windows.empty:
+            wids = result.windows["window_id"].unique()
+            assert all("_0800" in wid for wid in wids)
+
+    def test_midnight_window_id_has_no_hhmm_suffix(self):
+        """window_id for midnight anchor must keep the date-only format."""
+        df = _make_cgm(n_days=2)
+        result = windows.create_sliding_windows(df, show_progress=False)
+        wids = result.windows["window_id"].unique()
+        # No _HHMM suffix; each id ends with the date (YYYY-MM-DD)
+        for wid in wids:
+            parts = wid.split("_")
+            assert len(parts) == 2, f"Expected 'subject_date' format, got: {wid}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# create_day_segments
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCreateDaySegments:
+    def test_returns_window_result(self):
+        df = _make_cgm(n_days=3)
+        result = windows.create_day_segments(df, show_progress=False)
+        assert hasattr(result, "windows")
+        assert hasattr(result, "metadata")
+
+    def test_midnight_segments_288_rows_each(self):
+        """Each midnight-anchored day segment must have 288 rows (5-min grid)."""
+        df = _make_cgm(n_days=3)
+        result = windows.create_day_segments(df, show_progress=False)
+        for wid, grp in result.windows.groupby("window_id"):
+            assert len(grp) == 288, f"Window {wid} has {len(grp)} rows"
+
+    def test_8am_segments_288_rows_each(self):
+        """Each 8 AM-anchored day segment must also have 288 rows."""
+        df = _make_cgm(n_days=5)
+        result = windows.create_day_segments(df, anchor_time="08:00", show_progress=False)
+        for wid, grp in result.windows.groupby("window_id"):
+            assert len(grp) == 288, f"Window {wid} has {len(grp)} rows"
+
+    def test_multi_subject(self):
+        df1 = _make_cgm(n_days=3, subject="A", seed=10)
+        df2 = _make_cgm(n_days=3, subject="B", seed=20)
+        df = pd.concat([df1, df2], ignore_index=True)
+        result = windows.create_day_segments(df, show_progress=False)
+        assert result.windows["subject"].nunique() == 2
+
+    def test_non_overlapping_windows(self):
+        """Adjacent windows must not share any Timestamp values."""
+        df = _make_cgm(n_days=4)
+        result = windows.create_day_segments(df, show_progress=False)
+        for wid, grp in result.windows.groupby("window_id"):
+            ts_set = set(grp["Timestamp"])
+            other = result.windows.loc[result.windows["window_id"] != wid, "Timestamp"]
+            assert ts_set.isdisjoint(other), f"Window {wid} overlaps another window"
+
+    def test_top_level_import(self):
+        """create_day_segments must be importable from the top-level namespace."""
+        import glycosignal
+        assert hasattr(glycosignal, "create_day_segments")
+
+    def test_roundtrip_with_feature_map(self):
+        """Day segments should feed into build_feature_map without errors."""
+        from glycosignal import features
+        df = _make_cgm(n_days=3)
+        result = windows.create_day_segments(df, show_progress=False)
+        X = features.build_feature_map(result.windows)
+        assert isinstance(X, pd.DataFrame)
+        assert len(X) == result.metadata["n_valid_windows"]
