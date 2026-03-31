@@ -22,18 +22,18 @@ pip install GlycoSignal
 ## Quick start
 
 ```python
-import glycosignal
+import glycosignal as gs
 
-df = glycosignal.load_csv("cgm.csv")
-df = glycosignal.clean_cgm(df)
+df = gs.load_csv("cgm.csv")
+df = gs.clean_cgm(df)
 
 # Individual metrics
-glycosignal.mean_glucose(df)                             # 138.5
-glycosignal.time_in_range_percent(df, low=70, high=180)  # 93.1
+gs.mean_glucose(df)                             # 138.5
+gs.time_in_range_percent(df, low=70, high=180)  # 93.1
 
 # Segment → feature matrix  (the standard pipeline)
-segs = glycosignal.create_day_segments(df)               # 24 h, midnight anchor
-X    = glycosignal.build_feature_map(segs.windows)       # 32 features × n_days
+segs = gs.create_day_segments(df)               # 24 h, midnight anchor
+X    = gs.build_feature_map(segs.windows)       # 32 features × n_days
 ```
 
 ---
@@ -50,13 +50,13 @@ Two required columns; everything else is auto-detected (case-insensitive).
 
 ```python
 # Override auto-detection
-df = glycosignal.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
+df = gs.load_csv("data.csv", timestamp_col="time_utc", glucose_col="bg_mg_dl")
 
 # Multiple subjects — one file with subject column
-df = glycosignal.io.load_cgm_file("all.csv", subject_col="ptid")
+df = gs.io.load_cgm_file("all.csv", subject_col="ptid")
 
 # Multiple subjects — one CSV per subject in a folder
-df = glycosignal.io.load_cgm_folder("data/subjects/")
+df = gs.io.load_cgm_folder("data/subjects/")
 ```
 
 ---
@@ -182,10 +182,10 @@ features.build_feature_table([df_s01, df_s02], record_ids=["S01", "S02"])
 ### Feature registry
 
 ```python
-glycosignal.list_features()                      # all 32 names
-glycosignal.list_features(category="risk")       # ['adrr', 'gri', 'hbgi', 'lbgi']
-glycosignal.get_feature_metadata()               # DataFrame: name | description | category
-glycosignal.get_feature("gri").description       # 'Glucose Risk Index (Klonoff et al. 2023)'
+gs.list_features()                      # all 32 names
+gs.list_features(category="risk")       # ['adrr', 'gri', 'hbgi', 'lbgi']
+gs.get_feature_metadata()               # DataFrame: name | description | category
+gs.get_feature("gri").description       # 'Glucose Risk Index (Klonoff et al. 2023)'
 
 # Register a custom feature
 from glycosignal.registry import DEFAULT_REGISTRY
