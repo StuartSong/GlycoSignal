@@ -15,30 +15,6 @@ Analyze Continuous Glucose Monitor (CGM) data in Python with individually callab
 
 ---
 
-## Table of Contents
-
-- [Installation](#installation)
-- [Input Data Format](#input-data-format)
-  - [Single subject](#single-subject)
-  - [Multiple subjects](#multiple-subjects)
-  - [Unit conversion](#unit-conversion)
-  - [Device-specific loaders](#device-specific-loaders)
-- [Quickstart](#quickstart)
-- [Computing Glycemic Metrics](#computing-glycemic-metrics)
-  - [Individual metrics](#individual-metrics)
-  - [Grouped summaries](#grouped-summaries)
-  - [Full metric reference](#full-metric-reference)
-- [Building ML Feature Matrices](#building-ml-feature-matrices)
-  - [Feature registry](#feature-registry)
-- [Additional Capabilities](#additional-capabilities)
-  - [Preprocessing](#preprocessing)
-  - [Event detection](#event-detection)
-  - [Plotting](#plotting)
-  - [Command-line interface](#command-line-interface)
-- [License](#license)
-
----
-
 ## Installation
 
 ```bash
@@ -141,11 +117,82 @@ df = glycosignal.clean_cgm(df)
 print(glycosignal.mean_glucose(df))                          # 138.5
 print(glycosignal.time_in_range_percent(df, low=70, high=180))  # 93.1
 
-# Full feature matrix (32 features, one row per 24h window)
-result = glycosignal.create_sliding_windows(df, window_hours=24)
-X = glycosignal.build_feature_map(result.windows)
+# Daily segments — midnight-to-midnight (recommended pre-step for feature extraction)
+segs = glycosignal.create_day_segments(df)
+
+# Daily segments starting at 8 AM instead of midnight
+segs = glycosignal.create_day_segments(df, anchor_time="08:00")
+
+# Sliding windows: 6-hour window, 1-hour step
+result = glycosignal.create_sliding_windows(df, window_hours=6, step_hours=1)
+
+# Full feature matrix (32 features, one row per window)
+X = glycosignal.build_feature_map(segs.windows)
 print(X.shape)
 ```
+
+---
+
+## Data Segmentation
+
+Before computing features, segment the cleaned CGM trace into windows. Both functions return a `WindowResult(windows, metadata)` named tuple whose `windows` DataFrame flows directly into `features.build_feature_map()`.
+
+### Daily segments
+
+`create_day_segments` is the recommended entry point for per-day analysis. It produces non-overlapping 24-hour windows with no configuration required.
+
+```python
+from glycosignal import windows, features
+
+# Midnight-to-midnight (default)
+segs = windows.create_day_segments(df)
+
+# Start each day at 8:00 AM instead of midnight
+segs = windows.create_day_segments(df, anchor_time="08:00")
+
+# Multi-subject data
+segs = windows.create_day_segments(df, anchor_time="08:00", group_col="subject")
+
+print(segs.metadata)
+# {'n_groups': 1, 'n_valid_windows': 7, 'n_discarded_partial_days': 0, ...}
+
+# Feed directly into feature extraction
+X = features.build_feature_map(segs.windows)
+```
+
+### Sliding windows
+
+`create_sliding_windows` gives full control over window size, step size, and anchor time.
+
+```python
+from glycosignal import windows
+
+# 6-hour windows, 1-hour step (lots of overlap)
+result = windows.create_sliding_windows(df, window_hours=6, step_hours=1)
+
+# 12-hour windows anchored at 8 AM, no overlap
+result = windows.create_sliding_windows(df, window_hours=12, step_hours=12, anchor_time="08:00")
+
+# 24-hour windows with 12-hour overlap (legacy overlap_hours shorthand)
+result = windows.create_sliding_windows(df, window_hours=24, overlap_hours=12)
+
+# Multi-subject with custom step
+result = windows.create_sliding_windows(df, window_hours=24, step_hours=6, group_col="subject")
+```
+
+### Output format
+
+The `windows` DataFrame is long-format — one row per (window, time-point) pair:
+
+| Column | Description |
+|--------|-------------|
+| `window_id` | Unique identifier, e.g. `"S01_2023-01-02"` (midnight) or `"S01_2023-01-02_0800"` (8 AM anchor) |
+| `Timestamp` | 5-minute grid point |
+| `Glucose` | Glucose value in mg/dL (short gaps filled by PCHIP interpolation) |
+| `subject` | Subject identifier (when `group_col` is present) |
+| `date` | Calendar date of the window start |
+
+Windows with fewer than `min_fraction` (default 70%) of observed readings are dropped automatically. Pass `result.windows` directly to `features.build_feature_map()` to compute a feature matrix.
 
 ---
 
@@ -194,47 +241,7 @@ metrics.lbgi(p)
 
 ### Full metric reference
 
-#### Callable metric functions
-
-All functions accept a DataFrame or `PreparedCGMData` object.
-
-| Feature | Description | Computation |
-|---|---|---|
-| **Basic stats** | | |
-| `mean_glucose(data)` | Mean BGL | μ = (1/N) Σ Xᵢ |
-| `median_glucose(data)` | Median BGL | Middle value of sorted readings |
-| `min_glucose(data)` | Minimum BGL | Min(X₁, ..., Xₙ) |
-| `max_glucose(data)` | Maximum BGL | Max(X₁, ..., Xₙ) |
-| `q1_glucose(data)` | First quartile of BGL | Q1 = Percentile(X, 25) |
-| `q3_glucose(data)` | Third quartile of BGL | Q3 = Percentile(X, 75) |
-| **Variability** | | |
-| `sd(data)` | Standard deviation of BGL | σ = √(Σ(Xᵢ - μ)² / N) |
-| `cv(data)` | Coefficient of variation | CV = (σ / μ) × 100 |
-| `j_index(data)` | J-index | J = 0.001 × (μ + σ)² |
-| `mage(data)` | Mean Amplitude of Glucose Excursions | Mean of alternating peak-nadir amplitudes exceeding σ |
-| `conga24(data)` | Continuous Overall Net Glycemic Action | SD of {G(t) - G(t - 24h)} for all matched pairs |
-| **Time-in-range** | | |
-| `time_in_range_minutes(data, low, high)` | Minutes inside [low, high] | TIR = Δt × Σ(low ≤ BGL(t) ≤ high) |
-| `time_in_range_percent(data, low, high)` | Percent time inside [low, high] | TIR% = (TIR / T) × 100 |
-| `time_below_range_minutes(data, threshold)` | Minutes below threshold | TBR = Δt × Σ(BGL(t) ≤ threshold) |
-| `time_below_range_percent(data, threshold)` | Percent time below threshold | TBR% = (TBR / T) × 100 |
-| `time_above_range_minutes(data, threshold)` | Minutes above threshold | TAR = Δt × Σ(BGL(t) ≥ threshold) |
-| `time_above_range_percent(data, threshold)` | Percent time above threshold | TAR% = (TAR / T) × 100 |
-| `time_outside_range_minutes(data, low, high)` | Minutes outside [low, high] | TOR = Δt × Σ(BGL < low or BGL > high) |
-| `time_outside_range_percent(data, low, high)` | Percent time outside [low, high] | TOR% = (TOR / T) × 100 |
-| **Risk indices** | | |
-| `lbgi(data)` | Low Blood Glucose Index | LBGI = (1/N) Σ rl(Xᵢ); f(X) = ln(X)^1.084 - 5.381; rl = 22.77 × f² if f ≤ 0 |
-| `hbgi(data)` | High Blood Glucose Index | HBGI = (1/N) Σ rh(Xᵢ); rh = 22.77 × f² if f > 0 |
-| `adrr(data)` | Average Daily Risk Range | ADRR = Max(rl) + Max(rh) |
-| `gri(data)` | Glucose Risk Index | GRI = 3.0×%TBR₅₄ + 2.4×%TBR₇₀ + 1.6×%TAR₂₅₀ + 0.8×%TAR₁₈₀, capped at 100 |
-| **Excursions** | | |
-| `mean_glucose_excursion(data)` | Mean BGL outside mean ± SD | Mean of Xᵢ where Xᵢ < μ - σ or Xᵢ > μ + σ |
-| `mean_glucose_normal(data)` | Mean BGL inside mean ± SD | Mean of Xᵢ where μ - σ ≤ Xᵢ ≤ μ + σ |
-| **Peak counts** | | |
-| `count_peaks(data, threshold)` | Episodes above threshold | Count of rising-edge crossings above threshold |
-| `count_peaks_in_range(data, lower, upper)` | Episodes entering [lower, upper] | Count of rising-edge entries into [lower, upper] |
-
-> N = readings, Xᵢ = glucose value, μ = mean, σ = SD, Δt = interval between readings, T = total monitoring time.
+See the **[full metric reference on GitHub](https://github.com/StuartSong/GlycoSignal/blob/main/docs/METRICS.md)** for all callable functions, formulas, and grouped summary helpers.
 
 ---
 
