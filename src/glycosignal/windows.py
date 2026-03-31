@@ -122,7 +122,7 @@ def create_sliding_windows(
     overlap_hours: float = 0.0,
     step_hours: float | None = None,
     anchor_time: str = "00:00",
-    min_fraction: float = 0.7,
+    min_fraction: float = 0.0,
     group_col: str = "subject",
     id_cols: list[str] | tuple[str, ...] | None = None,
     tolerance_minutes: float = 2.5,
@@ -159,8 +159,9 @@ def create_sliding_windows(
         behaviour.  Example: ``"08:00"`` starts every window series at 8 AM.
     min_fraction : float
         Minimum fraction of the 5-minute grid points that must have observed
-        data for a window to be kept (before interpolation).  Default 0.7
-        (70%).  Range: 0.0–1.0.
+        data for a window to be kept (before interpolation).  Default 0.0
+        (keep all windows).  Range: 0.0–1.0.  Set e.g. ``0.7`` to drop
+        windows with fewer than 70 % of expected readings.
     group_col : str
         Column used to group data per subject / recording.  Default
         ``"subject"``.  Use ``"filename"`` for per-file recordings.
@@ -362,7 +363,7 @@ def create_sliding_windows(
 def create_day_segments(
     df: pd.DataFrame,
     anchor_time: str = "00:00",
-    min_fraction: float = 0.7,
+    min_fraction: float = 0.0,
     group_col: str = "subject",
     id_cols: list[str] | tuple[str, ...] | None = None,
     tolerance_minutes: float = 2.5,
@@ -381,7 +382,7 @@ def create_day_segments(
 
     Parameters
     ----------\n    df : pd.DataFrame\n        CGM data with ``Timestamp`` and ``Glucose`` columns plus any grouping\n        columns.
-    anchor_time : str\n        Time-of-day at which each day segment starts, in ``\"HH:MM\"`` 24-hour\n        format.  Default ``\"00:00\"`` (midnight).  Use e.g. ``\"08:00\"`` to\n        produce segments that run 08:00 \u2013 08:00 the following day.\n    min_fraction : float\n        Minimum fraction of the expected 288 grid points (at 5-min resolution)\n        that must have observed readings for a day to be retained.  Default 0.7.\n    group_col : str\n        Column used to group data per subject / recording.  Default ``\"subject\"``.\n    id_cols : list[str] | None\n        Additional identifier columns to carry through to the output.\n    tolerance_minutes : float\n        Maximum snap distance (minutes) to a 5-minute grid point.  Default 2.5.\n    interpolate : bool\n        Whether to fill short gaps with PCHIP interpolation.  Default True.\n    max_gap_points : int\n        Maximum consecutive missing grid points to interpolate.  Default 12.\n    show_progress : bool\n        Show a tqdm progress bar.  Default True.
+    anchor_time : str\n        Time-of-day at which each day segment starts, in ``\"HH:MM\"`` 24-hour\n        format.  Default ``\"00:00\"`` (midnight).  Use e.g. ``\"08:00\"`` to\n        produce segments that run 08:00 \u2013 08:00 the following day.\n    min_fraction : float\n        Minimum fraction of the expected 288 grid points (at 5-min resolution)\n        that must have observed readings for a day to be retained.  Default 0.0 (keep all days).  Set e.g. 0.7 to drop days with fewer than 70 % coverage.\n    group_col : str\n        Column used to group data per subject / recording.  Default ``\"subject\"``.\n    id_cols : list[str] | None\n        Additional identifier columns to carry through to the output.\n    tolerance_minutes : float\n        Maximum snap distance (minutes) to a 5-minute grid point.  Default 2.5.\n    interpolate : bool\n        Whether to fill short gaps with PCHIP interpolation.  Default True.\n    max_gap_points : int\n        Maximum consecutive missing grid points to interpolate.  Default 12.\n    show_progress : bool\n        Show a tqdm progress bar.  Default True.
 
     Returns
     -------
