@@ -419,32 +419,48 @@ def create_day_segments(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def pivot_windows_wide(windows_df: pd.DataFrame) -> pd.DataFrame:
-    """Convert long-format windowed output to the legacy wide format.
+    """Convert long-format windowed output to wide format, one row per window.
 
-    Each window becomes a single row, with time-of-day columns like
-    ``00:00``, ``00:05``, ..., ``23:55``.  This format is accepted by
-    :func:`~glycosignal.features.build_feature_map_wide`.
+    Each window becomes a single row with absolute time-of-day columns
+    ``00:00``, ``00:05``, …, ``23:55`` (288 columns for 5-min data).
+    Identity columns (``date``, ``filename``, ``subject``) are placed first,
+    matching the standard wide CSV layout.  ``window_id`` is dropped because
+    it is redundant with ``subject`` + ``date``.
+
+    Time columns are sorted chronologically from the window anchor, so a
+    segment starting at 08:00 produces columns in the order
+    ``08:00``, ``08:05``, …, ``23:55``, ``00:00``, …, ``07:55``.
 
     Parameters
     ----------
     windows_df : pd.DataFrame
-        Long-format output from :func:`create_sliding_windows`.
+        Long-format output from :func:`create_sliding_windows` or
+        :func:`create_day_segments`.
 
     Returns
     -------
     pd.DataFrame
-        Wide-format DataFrame with one row per window.
+        Wide-format DataFrame with one row per window.  Columns:
+        ``date``, ``filename``, ``subject`` (whichever are present), any
+        other metadata columns, then ``HH:MM`` glucose columns.
 
     Raises
     ------
     ValueError
         If required columns are missing.
+
+    Examples
+    --------
+    >>> segs = glycosignal.create_day_segments(df)
+    >>> wide = glycosignal.pivot_windows_wide(segs.windows)
+    >>> wide.to_csv("day_segments.csv", index=False)
     """
     require_dataframe(windows_df, "windows_df")
     require_columns(windows_df, ["window_id", COL_TIMESTAMP, COL_GLUCOSE])
 
-    # Compute time-of-day offset from start of window
     ts = pd.to_datetime(windows_df[COL_TIMESTAMP])
+
+    # Absolute time-of-day labels (HH:MM)
     day = ts.dt.floor("D")
     offset_min = ((ts - day).dt.total_seconds() // 60).astype(int)
     hours, mins = divmod(offset_min, 60)
@@ -457,13 +473,35 @@ def pivot_windows_wide(windows_df: pd.DataFrame) -> pd.DataFrame:
         index="window_id", columns="_time_col", values=COL_GLUCOSE, aggfunc="first"
     )
     wide.columns.name = None
-    wide = wide.reset_index()
 
-    # Re-attach metadata columns
+    # Infer anchor time (mode of the first timestamp's time-of-day per window)
+    # to sort time columns chronologically from that anchor rather than alphabetically.
+    first_ts = (
+        windows_df.assign(_ts=ts)
+        .groupby("window_id")["_ts"]
+        .min()
+    )
+    anchor_total_min = (first_ts.dt.hour * 60 + first_ts.dt.minute).mode()
+    anchor_min = int(anchor_total_min.iloc[0]) if len(anchor_total_min) else 0
+
+    def _chrono_key(col: str) -> int:
+        h, m = map(int, col.split(":"))
+        return (h * 60 + m - anchor_min) % (24 * 60)
+
+    time_cols_sorted = sorted(wide.columns.tolist(), key=_chrono_key)
+    wide = wide[time_cols_sorted].reset_index()
+
+    # Re-attach metadata columns (all except Timestamp and Glucose)
     meta_cols = [c for c in windows_df.columns
                  if c not in ("window_id", COL_TIMESTAMP, COL_GLUCOSE)]
     meta = windows_df.drop_duplicates("window_id")[["window_id"] + meta_cols]
-    return meta.merge(wide, on="window_id").reset_index(drop=True)
+    result = meta.merge(wide, on="window_id").reset_index(drop=True)
+
+    # Reorder columns: date, filename, subject first; drop window_id
+    priority = ["date", "filename", "subject"]
+    front = [c for c in priority if c in result.columns]
+    other_meta = [c for c in meta_cols if c not in priority]
+    return result[front + other_meta + time_cols_sorted]
 
 
 def windows_to_records(

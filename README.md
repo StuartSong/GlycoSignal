@@ -194,6 +194,27 @@ The `windows` DataFrame is long-format — one row per (window, time-point) pair
 
 Windows with fewer than `min_fraction` (default 70%) of observed readings are dropped automatically. Pass `result.windows` directly to `features.build_feature_map()` to compute a feature matrix.
 
+### Saving segments as CSV
+
+Use `pivot_windows_wide()` to convert the long-format result into a wide-format CSV — one row per window, one column per time point:
+
+```python
+from glycosignal import windows
+
+segs = windows.create_day_segments(df)
+wide = windows.pivot_windows_wide(segs.windows)
+wide.to_csv("day_segments.csv", index=False)
+```
+
+The saved file looks like this:
+
+| `date` | `subject` | `00:00` | `00:05` | … | `23:55` |
+|--------|-----------|---------|---------|---|---------|
+| 2023-01-02 | S01 | 112.4 | 115.1 | … | 98.3 |
+| 2023-01-03 | S01 | 103.7 | 101.2 | … | 110.5 |
+
+For a non-midnight anchor (e.g. `"08:00"`) the time columns run `08:00`, `08:05`, …, `23:55`, `00:00`, …, `07:55` in chronological order. Each cell is the glucose reading at that time point; cells are `NaN` if a reading was missing and could not be interpolated.
+
 ---
 
 ## Computing Glycemic Metrics
